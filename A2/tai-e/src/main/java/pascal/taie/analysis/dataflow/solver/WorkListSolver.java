@@ -25,6 +25,12 @@ package pascal.taie.analysis.dataflow.solver;
 import pascal.taie.analysis.dataflow.analysis.DataflowAnalysis;
 import pascal.taie.analysis.dataflow.fact.DataflowResult;
 import pascal.taie.analysis.graph.cfg.CFG;
+import pascal.taie.ir.exp.Var;
+
+import java.util.ArrayDeque;
+import java.util.HashSet;
+import java.util.Queue;
+import java.util.Set;
 
 class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
 
@@ -34,7 +40,31 @@ class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
 
     @Override
     protected void doSolveForward(CFG<Node> cfg, DataflowResult<Node, Fact> result) {
+
+        //YES I'M USING HashSet INSTEAD OF QUEUE TO SHOW THAT THIS ALGORITHM DOESN'T REQUIRE QUEUE!
+        Set<Node> workList = new HashSet<Node>();
         // TODO - finish me
+        //Queue<Node> workList = new ArrayDeque<>();
+        for (Node node : cfg) workList.add(node);
+
+        while (!workList.isEmpty()) {
+            Node node = workList.iterator().next();
+            workList.remove(node);
+
+            Fact outFact = result.getOutFact(node);
+            Fact inFact = result.getInFact(node);
+            for (Node pred : cfg.getPredsOf(node)){
+                analysis.meetInto(result.getOutFact(pred), inFact);
+            }
+
+            if (analysis.transferNode(node, inFact, outFact)) {
+                for (Node succ : cfg.getSuccsOf(node)) {
+                    if (!workList.contains(succ)) workList.add(succ);
+                }
+            }
+        }
+
+
     }
 
     @Override
