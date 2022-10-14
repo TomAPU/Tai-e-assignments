@@ -33,21 +33,15 @@ import pascal.taie.analysis.graph.cfg.CFGBuilder;
 import pascal.taie.analysis.graph.cfg.Edge;
 import pascal.taie.config.AnalysisConfig;
 import pascal.taie.ir.IR;
-import pascal.taie.ir.exp.ArithmeticExp;
-import pascal.taie.ir.exp.ArrayAccess;
-import pascal.taie.ir.exp.CastExp;
-import pascal.taie.ir.exp.FieldAccess;
-import pascal.taie.ir.exp.NewExp;
-import pascal.taie.ir.exp.RValue;
-import pascal.taie.ir.exp.Var;
+import pascal.taie.ir.exp.*;
 import pascal.taie.ir.stmt.AssignStmt;
 import pascal.taie.ir.stmt.If;
 import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.ir.stmt.SwitchStmt;
+import java.util.*;
+import pascal.taie.util.collection.Pair;
 
-import java.util.Comparator;
-import java.util.Set;
-import java.util.TreeSet;
+import pascal.taie.analysis.graph.cfg.Edge;
 
 public class DeadCodeDetection extends MethodAnalysis {
 
@@ -69,8 +63,80 @@ public class DeadCodeDetection extends MethodAnalysis {
                 ir.getResult(LiveVariableAnalysis.ID);
         // keep statements (dead code) sorted in the resulting set
         Set<Stmt> deadCode = new TreeSet<>(Comparator.comparing(Stmt::getIndex));
+
         // TODO - finish me
         // Your task is to recognize dead code in ir and add it to deadCode
+        if(ir.getMethod().toString().contains("deadLoop()")){
+            System.out.println("here we go");
+        }
+        // System.out.println("Entry LINE NUMBER:"+cfg.getEntry().getLineNumber());
+        var reachable=new ArrayList<Stmt>();
+        var alreadyfucked=new TreeSet<>(Comparator.comparing(Stmt::getIndex));
+        reachable.add(cfg.getEntry());
+        for(var i=0;i< reachable.size();i++){
+            var curstmt=reachable.get(i);
+
+            if(alreadyfucked.contains(curstmt)){
+                continue;
+            }
+            alreadyfucked.add(curstmt);
+            //unused assign
+            if(curstmt instanceof AssignStmt<?,?> s && s.getLValue() instanceof Var var ){
+                var leftvar=((AssignStmt<?,?>)curstmt).getLValue();
+                var rightvar=((AssignStmt<?,?>)curstmt).getRValue();
+
+                //deaaaad
+                if(!(( liveVars.getOutFact(curstmt).contains((Var)leftvar))
+                        || !hasNoSideEffect(rightvar))){
+                    deadCode.add(curstmt);
+                    //continue;
+                }
+                reachable.addAll(cfg.getSuccsOf(curstmt));
+            }
+            //if statement
+            else if(curstmt instanceof If ){
+                var con=ConstantPropagation.evaluate(((If) curstmt).getCondition(),constants.getResult(curstmt));
+                for (Edge<Stmt> stmtEdge : cfg.getOutEdgesOf(curstmt)) {
+                    if((!con.isConstant())||
+                            (con.getConstant()==1 && stmtEdge.getKind()==Edge.Kind.IF_TRUE)||
+                            (con.getConstant()==0 && stmtEdge.getKind()==Edge.Kind.IF_FALSE)){
+                        reachable.add(stmtEdge.getTarget());
+                    }
+                }
+
+            }
+
+            else if(curstmt instanceof SwitchStmt ){
+                var con=ConstantPropagation.evaluate(((SwitchStmt) curstmt).getVar(),constants.getInFact(curstmt));
+                if(!con.isConstant()){
+                    reachable.addAll(cfg.getSuccsOf(curstmt));
+                    continue;
+                }
+                var weneeddefault=true;
+                for (Edge<Stmt> stmtEdge : cfg.getOutEdgesOf(curstmt)) {
+                    if((stmtEdge.isSwitchCase() &&con.getConstant()==stmtEdge.getCaseValue())){
+                        reachable.add(stmtEdge.getTarget());
+                        weneeddefault=false;
+                    }
+                }
+                if(weneeddefault)
+                    reachable.add(((SwitchStmt) curstmt).getDefaultTarget());
+
+            }
+            else {
+                reachable.addAll(cfg.getSuccsOf(curstmt));
+            }
+
+        }
+
+        /*cfg.getNodes()*/ir.getStmts().forEach(stmt -> {
+            if((!reachable.contains(stmt))/*&&stmt!= cfg.getExit()*/)
+                deadCode.add(stmt);
+            if((!reachable.contains(stmt))&&stmt== cfg.getExit()){
+                System.out.println("fuuuuck");
+            }
+        });
+
         return deadCode;
     }
 
